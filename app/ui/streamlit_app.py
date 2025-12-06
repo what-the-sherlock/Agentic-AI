@@ -66,7 +66,7 @@ with st.sidebar:
             st.session_state.active_filename = None
             st.rerun()
 
-st.title("Agentic Smith")
+st.title("Agent Smith")
 
 # For Displaying chat messages
 for msg in st.session_state.messages:
