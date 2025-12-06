@@ -6,16 +6,6 @@ from app.api.schemas import PlannerDecision
 logger = logging.getLogger(__name__)
 
 class Planner:
-    """
-    Deterministic Intent Router.
-    
-    ARCHITECTURAL DECISION:
-    Instead of passing every query to a large LLM (latency ~2s, high cost), 
-    we use a heuristic layer first. This strictly enforces constraints 
-    and handles specific formats (like Code or Audio) instantly.
-    
-    The LLM is only used for generation, not for routing, ensuring predictability.
-    """
 
     def decide(
         self,
@@ -39,6 +29,10 @@ class Planner:
             "scope": scope,
         }
 
+        is_question = "?" in user_text or re.search(r"\b(who|what|when|where|why|how)\b", combined_text)
+        is_explicit_summary = re.search(r"\bsummar(y|ise|ize)|tl;dr\b", combined_text)
+        is_sentiment = re.search(r"\bsentiment|tone|emotion\b", combined_text)
+
         if user_text and ("youtube.com/watch" in combined_text or "youtu.be/" in combined_text):
             return PlannerDecision(
                 intent="transcript_fetch",
@@ -49,23 +43,10 @@ class Planner:
                 reason="YouTube URL pattern matched.",
                 constraints=constraints,
             )
-        #Handles Audio Files
-        if has_audio:
-            return PlannerDecision(
-                intent="transcription_summary",
-                confidence=0.95,
-                needs_followup=False,
-                followup_question=None,
-                tool_chain=["stt", "summarize"],
-                reason="Audio file source detected.",
-                constraints=constraints,
-            )
-        #Code Analysis 
+
         is_code_user = self._heuristic_code_detection(user_text)
         is_code_doc = self._heuristic_code_detection(doc_text)
 
-        is_explicit_summary = "summar" in combined_text
-        
         if (is_code_user or is_code_doc) and not is_explicit_summary:
             return PlannerDecision(
                 intent="code_explanation",
@@ -77,8 +58,7 @@ class Planner:
                 constraints=constraints,
             )
 
-        #Keyword based intents
-        if re.search(r"\bsummar(y|ise|ize)|tl;dr\b", combined_text):
+        if is_explicit_summary:
             return PlannerDecision(
                 intent="summarization",
                 confidence=0.9,
@@ -89,7 +69,7 @@ class Planner:
                 constraints=constraints,
             )
 
-        if re.search(r"\bsentiment|tone|emotion\b", combined_text):
+        if is_sentiment:
             return PlannerDecision(
                 intent="sentiment",
                 confidence=0.9,
@@ -99,18 +79,16 @@ class Planner:
                 reason="Sentiment analysis keyword matched.",
                 constraints=constraints,
             )
-        #Contextual Question Answering
-        is_question = "?" in user_text or re.search(r"\b(who|what|when|where|why|how)\b", combined_text)
-        
+
         if is_question:
-            if has_document:
+            if has_document or has_audio:
                 return PlannerDecision(
                     intent="qa",
                     confidence=0.85,
                     needs_followup=False,
                     followup_question=None,
                     tool_chain=["rag"],
-                    reason="Interrogative input with active document context.",
+                    reason="Interrogative input with active file context.",
                     constraints=constraints,
                 )
             else:
@@ -123,7 +101,18 @@ class Planner:
                     reason="General conversational query.",
                     constraints=constraints,
                 )
-        #Ambiguous cases
+
+        if has_audio:
+            return PlannerDecision(
+                intent="transcription_summary",
+                confidence=0.95,
+                needs_followup=False,
+                followup_question=None,
+                tool_chain=["stt", "summarize"],
+                reason="Audio file detected (Auto-Summarizing).",
+                constraints=constraints,
+            )
+
         if has_document and len(user_text) < 5:
             return PlannerDecision(
                 intent="unknown",
@@ -154,7 +143,7 @@ class Planner:
             return False
 
         if "```" in text: return True
-        if text.count(";") >= 3 and "{" in text: return True # C-style/JS 
+        if text.count(";") >= 3 and "{" in text: return True  
 
         strong_keywords = [
             "def ", "console.log", "public static", "void main", 
@@ -166,6 +155,6 @@ class Planner:
 
         if "import " in text and "from " in text: return True
         if "class " in text and ":" in text: return True
-        if "SELECT " in text and "FROM " in text: return True # SQL
+        if "SELECT " in text and "FROM " in text: return True 
         
         return False

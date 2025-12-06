@@ -40,7 +40,7 @@ async def agent_endpoint(
         previous_context=previous_context,
         context_text=context_text
     )
-    #Input is taken like extracted text
+
     t_start = time.time()
 
     routed = await input_router.route(user_input.text, file)
@@ -51,7 +51,9 @@ async def agent_endpoint(
         extracted_text = user_input.context_text
         if not routing_meta.get("source") or routing_meta.get("source") == "text_only":
              routing_meta["source"] = "context_cache"
-    #Intent Planning
+
+    extraction_confidence = routing_meta.get("ocr_confidence", 0.0)
+
     decision = planner.decide(
         text=user_input.text,
         extracted_text=extracted_text,
@@ -66,7 +68,6 @@ async def agent_endpoint(
     tool_results: list[ToolResult] = []
     final_output: Optional[str] = None
 
-    #Handles if there is any ambiguity 
     if decision.needs_followup:
         run_log = RunLog(
             planner_decision=decision, 
@@ -77,13 +78,13 @@ async def agent_endpoint(
             status="needs_clarification",
             message=decision.followup_question or "I need more detail.",
             extracted_text=extracted_text,
+            extraction_confidence=extraction_confidence, 
             final_output=None,
             run_log=run_log,
         )
 
     intent = decision.intent
 
-    #It executes based on the planned intent
     if intent == "transcript_fetch":
         t0 = time.time()
         yt_res = yt_service.fetch_transcript_from_text(user_input.text or extracted_text or "")
@@ -154,6 +155,7 @@ async def agent_endpoint(
         status="ok",
         message="ok",
         extracted_text=extracted_text,
+        extraction_confidence=extraction_confidence, 
         final_output=final_output,
         run_log=run_log,
     )

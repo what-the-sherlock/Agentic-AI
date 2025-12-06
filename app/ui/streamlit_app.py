@@ -10,14 +10,12 @@ st.set_page_config(page_title="Agent Smith", layout="centered")
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Active Context Storage
 if "active_text" not in st.session_state:
     st.session_state.active_text = None 
 
 if "active_filename" not in st.session_state:
     st.session_state.active_filename = None
 
-# Function to call the agent API
 def call_agent_api(
     text: str,
     file_obj: Optional[st.runtime.uploaded_file_manager.UploadedFile],
@@ -43,6 +41,7 @@ def call_agent_api(
     resp = requests.post(API_URL, data=data, files=files, timeout=120)
     resp.raise_for_status()
     return resp.json()
+
 # Sidebar for file upload
 with st.sidebar:
     st.header("Attachments")
@@ -119,21 +118,46 @@ if user_input := st.chat_input("Message..."):
             if extracted_text:
                 st.session_state.active_text = extracted_text
 
-            if status == "needs_clarification":
-                    main_text = f"**Clarification Required:**\n\n{message}"
-            elif status == "error":
-                    main_text = f"**Error:**\n\n{message}"
-            else:
-                    main_text = final_output or "(No output)"
+            if status == "ok":
+                placeholder.empty()
 
-            streamed_text = ""
-            for char in main_text:
-                streamed_text += char
-                if len(streamed_text) % 2 == 0: 
-                    placeholder.markdown(f"{streamed_text}▌")
-                    time.sleep(0.005) 
-            
-            placeholder.markdown(main_text)
+                tab1, tab2 = st.tabs(["📝 Final Result", "📄 Source Text"])
+                
+                main_text = final_output or "(No output)"
+
+                with tab1:
+                    stream_box = st.empty()
+                    streamed_text = ""
+                    for char in main_text:
+                        streamed_text += char
+                        if len(streamed_text) % 2 == 0: 
+                            stream_box.markdown(f"{streamed_text}▌")
+                            time.sleep(0.005)
+                    stream_box.markdown(main_text)
+
+                with tab2:
+                    if st.session_state.active_text:
+                        st.text_area("Raw Extracted Content", st.session_state.active_text, height=300)
+                    else:
+                        st.info("No source text available.")
+
+            else:
+
+                if status == "needs_clarification":
+                    main_text = f"**Clarification Required:**\n\n{message}"
+                elif status == "error":
+                    main_text = f"**Error:**\n\n{message}"
+                else:
+                    main_text = message
+
+                streamed_text = ""
+                for char in main_text:
+                    streamed_text += char
+                    if len(streamed_text) % 2 == 0: 
+                        placeholder.markdown(f"{streamed_text}▌")
+                        time.sleep(0.005) 
+                placeholder.markdown(main_text)
+
 
             if run_log and "cost_estimate" in run_log and run_log["cost_estimate"]:
                 est = run_log["cost_estimate"]
